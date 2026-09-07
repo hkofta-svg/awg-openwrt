@@ -38,8 +38,10 @@ jobs:
             gettext git libncurses5-dev libssl-dev python3-setuptools python3-dev file wget rsync unzip zlib1g-dev
 
       - name: Clone OpenWrt Source Repository
+        env:
+          REPO_URL: 'https://github.com'
         run: |
-          git clone "https://github.com" -b "v${{ github.event.inputs.version }}" openwrt
+          git clone $REPO_URL -b v${{ github.event.inputs.version }} openwrt
           echo "WORK_DIR=$GITHUB_WORKSPACE/openwrt" >> $GITHUB_ENV
 
       - name: Update and Install Feeds
