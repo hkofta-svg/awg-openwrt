@@ -19,6 +19,7 @@ on:
 env:
   KERNEL_VERSION: '6.18.38'
   KERNEL_HASH: '25da44f9c5d7963d33efc6b6531393bcff7012d9b23bfa1ffcdccba7ea6445aa'
+  WORK_DIR: '${{ github.workspace }}/openwrt'
 
 jobs:
   build:
@@ -26,9 +27,11 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
+      # Step 1: Checkout your own repository where this action file lives
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      # Step 2: Install system build requirements for Ubuntu 24.04
       - name: Free Disk Space & Install Build Prerequisites
         run: |
           sudo docker image prune -a -f
@@ -37,19 +40,22 @@ jobs:
           sudo apt-get install -y build-essential clang flex bison g++ gawk \
             gettext git libncurses5-dev libssl-dev python3-setuptools python3-dev file wget rsync unzip zlib1g-dev
 
+      # Step 3: Use the official native git action to pull OpenWrt securely without script breaks
       - name: Clone OpenWrt Source Repository
-        env:
-          REPO_URL: 'https://github.com'
-        run: |
-          git clone $REPO_URL -b v${{ github.event.inputs.version }} openwrt
-          echo "WORK_DIR=$GITHUB_WORKSPACE/openwrt" >> $GITHUB_ENV
+        uses: actions/checkout@v4
+        with:
+          repository: 'openwrt/openwrt'
+          ref: 'v${{ github.event.inputs.version }}'
+          path: 'openwrt'
 
+      # Step 4: Install extra packages and core feeds
       - name: Update and Install Feeds
         run: |
           cd "${{ env.WORK_DIR }}"
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
+      # Step 5: Force the core repository files to target Linux Kernel 6.18.38
       - name: Inject Kernel 6.18.38 Version and Hash Overrides
         run: |
           cd "${{ env.WORK_DIR }}"
@@ -61,6 +67,7 @@ jobs:
           echo "LINUX_VERSION-6.18 = .38" > include/kernel-6.18
           echo "LINUX_KERNEL_HASH-6.18.38 = ${{ env.KERNEL_HASH }}" >> include/kernel-6.18
 
+      # Step 6: Initialize compilation target definitions
       - name: Generate Defconfig File
         run: |
           cd "${{ env.WORK_DIR }}"
@@ -69,9 +76,10 @@ jobs:
           echo "CONFIG_TARGET_${{ github.event.inputs.target }}=y" > .config
           echo "CONFIG_TARGET_${{ github.event.inputs.target }}_${{ github.event.inputs.subtarget }}=y" >> .config
           
-          # Automatically select dependent packages and configurations
+          # Automatically select dependent packages and configurations safely
           FORCE=1 make defconfig
 
+      # Step 7: Pre-fetch tarballs 
       - name: Pre-download Source Code Dependencies
         run: |
           cd "${{ env.WORK_DIR }}"
@@ -79,12 +87,14 @@ jobs:
           find dl -size -1024c -exec ls -l {} \;
           find dl -size -1024c -exec rm -f {} \;
 
+      # Step 8: Multi-threaded compiler toolchain step
       - name: Multi-Threaded Firmware Compilation
         run: |
           cd "${{ env.WORK_DIR }}"
           echo "Compiling using $(nproc) execution threads..."
           FORCE=1 make -j$(nproc) || FORCE=1 make -j1 V=s
 
+      # Step 9: Archive target images
       - name: Upload Finished Firmware Artifacts
         uses: actions/upload-artifact@v4
         with:
